@@ -52,3 +52,8 @@ warehouse:
       primary_key: order_item_id
       partition_field: order_date
       cluster_fields: [category, country_code]
+    dim_customers_scd2:
+      source_file: dim_customers_scd2.parquet
+      primary_key: surrogate_key
+      partition_field: valid_from
+      cluster_fields: [customer_id, is_current]

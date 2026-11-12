@@ -11,6 +11,18 @@ from google.cloud import bigquery
 
 
 EXPECTED_SCHEMAS: Dict[str, Dict[str, str]] = {
+    "dim_customers_scd2": {
+        "surrogate_key": "STRING",
+        "customer_id": "INT64",
+        "customer_code": "STRING",
+        "full_name": "STRING",
+        "segment": "STRING",
+        "country_code": "STRING",
+        "city": "STRING",
+        "valid_from": "TIMESTAMP",
+        "valid_to": "TIMESTAMP",
+        "is_current": "BOOL",
+    },
     "dim_customers": {
         "customer_id": "INT64",
         "customer_code": "STRING",

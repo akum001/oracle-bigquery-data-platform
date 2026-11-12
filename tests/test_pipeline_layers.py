@@ -229,3 +229,59 @@ def test_curation_dedup_quarantine_and_warehouse_dry_run(
     BigQueryWarehouseLoader(temp_workspace).run()
     manifest_file = Path(cfg["paths"]["state_dir"]) / "bq_load_manifest.json"
     assert manifest_file.exists()
+
+
+def test_scd2_history_tracks_attribute_changes() -> None:
+    from src.processing.scd2_builder import build_scd2_dimension
+
+    df = pd.DataFrame(
+        [
+            {
+                "customer_id": 2,
+                "customer_code": "CUST-1002",
+                "full_name": "Elena Rostova",
+                "segment": "SMB",
+                "country_code": "DE",
+                "city": "Berlin",
+                "is_active": 1,
+                "updated_at": datetime(2026, 11, 2, 11, 30),
+                "_extracted_at_utc": "2026-11-12T17:34:59+00:00",
+            },
+            # Exact duplicate extraction with no attribute change -> should NOT create a duplicate SCD2 row
+            {
+                "customer_id": 2,
+                "customer_code": "CUST-1002",
+                "full_name": "Elena Rostova",
+                "segment": "SMB",
+                "country_code": "DE",
+                "city": "Berlin",
+                "is_active": 1,
+                "updated_at": datetime(2026, 11, 2, 11, 30),
+                "_extracted_at_utc": "2026-11-12T17:35:10+00:00",
+            },
+            # Attribute update -> creates second historical version
+            {
+                "customer_id": 2,
+                "customer_code": "CUST-1002",
+                "full_name": "Elena Rostova",
+                "segment": "ENTERPRISE",
+                "country_code": "DE",
+                "city": "Hyderabad",
+                "is_active": 1,
+                "updated_at": datetime(2026, 11, 12, 17, 35),
+                "_extracted_at_utc": "2026-11-12T17:35:26+00:00",
+            },
+        ]
+    )
+
+    scd2 = build_scd2_dimension(
+        raw_df=df,
+        natural_key="customer_id",
+        tracked_cols=["full_name", "segment", "country_code", "city", "is_active"],
+    )
+    assert len(scd2) == 2
+    assert bool(scd2.loc[0, "is_current"]) is False
+    assert scd2.loc[0, "city"] == "Berlin"
+    assert scd2.loc[0, "valid_to"] == pd.Timestamp(datetime(2026, 11, 12, 17, 35))
+    assert bool(scd2.loc[1, "is_current"]) is True
+    assert scd2.loc[1, "city"] == "Hyderabad"

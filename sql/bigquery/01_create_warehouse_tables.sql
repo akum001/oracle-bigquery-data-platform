@@ -77,3 +77,21 @@ CREATE TABLE IF NOT EXISTS `${PROJECT_ID}.erp_analytics.fact_order_lines` (
 )
 PARTITION BY DATE(order_date)
 CLUSTER BY category, country_code;
+
+CREATE TABLE IF NOT EXISTS `${PROJECT_ID}.erp_analytics.dim_customers_scd2` (
+  surrogate_key STRING NOT NULL,
+  customer_id INT64 NOT NULL,
+  customer_code STRING NOT NULL,
+  full_name STRING NOT NULL,
+  email STRING NOT NULL,
+  segment STRING,
+  country_code STRING,
+  city STRING,
+  is_active INT64,
+  valid_from TIMESTAMP NOT NULL,
+  valid_to TIMESTAMP NOT NULL,
+  is_current BOOL NOT NULL,
+  _scd2_built_at_utc STRING
+)
+PARTITION BY DATE(valid_from)
+CLUSTER BY customer_id, is_current;
