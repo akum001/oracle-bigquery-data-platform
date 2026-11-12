@@ -1,0 +1,54 @@
+source:
+  system_name: oracle_erp
+  schema: SRC_ERP
+  batch_size: 1000
+
+tables:
+  customers:
+    primary_key: customer_id
+    watermark_column: updated_at
+    extract_mode: incremental
+  products:
+    primary_key: product_id
+    watermark_column: updated_at
+    extract_mode: incremental
+  orders:
+    primary_key: order_id
+    watermark_column: updated_at
+    extract_mode: incremental
+  order_items:
+    primary_key: order_item_id
+    watermark_column: updated_at
+    extract_mode: incremental
+
+paths:
+  raw_landing_dir: data/raw
+  state_dir: data/state
+
+  curated_dir: data/curated
+  quarantine_dir: data/quarantine
+
+warehouse:
+  provider: bigquery
+  dataset: erp_analytics
+  tables:
+    dim_customers:
+      source_file: customers.parquet
+      primary_key: customer_id
+      partition_field: updated_at
+      cluster_fields: [segment, country_code]
+    dim_products:
+      source_file: products.parquet
+      primary_key: product_id
+      partition_field: updated_at
+      cluster_fields: [category, sku]
+    fact_orders:
+      source_file: orders.parquet
+      primary_key: order_id
+      partition_field: order_date
+      cluster_fields: [order_status, customer_id]
+    fact_order_lines:
+      source_file: fact_order_lines.parquet
+      primary_key: order_item_id
+      partition_field: order_date
+      cluster_fields: [category, country_code]

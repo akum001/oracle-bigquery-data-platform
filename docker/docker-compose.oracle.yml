@@ -1,0 +1,29 @@
+services:
+  oracle-db:
+    image: container-registry.oracle.com/database/free:23.9.0.0
+    container_name: oracle-23ai-free
+    ports:
+      - "1521:1521"
+    env_file:
+      - ../.env
+    environment:
+      - ORACLE_PWD=${ORACLE_PWD}
+      - ORACLE_CHARACTERSET=${ORACLE_CHARACTERSET}
+      - ORACLE_PDB=${ORACLE_PDB}
+    volumes:
+      - oracle_23ai_data:/opt/oracle/oradata
+      - ../database/ddl:/opt/oracle/scripts/ddl:ro
+      - ../database/seed:/opt/oracle/scripts/seed:ro
+    shm_size: "1g"
+    mem_limit: 3g
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+volumes:
+  oracle_23ai_data:
+    name: oracle_23ai_data
