@@ -85,6 +85,8 @@ class OracleExtractor:
 
         with conn.cursor() as cur:
             cur.arraysize = self.batch_size
+            if "last_wm" in params:
+                cur.setinputsizes(last_wm=oracledb.DB_TYPE_TIMESTAMP)
             cur.execute(sql, params)
             columns = [desc[0].lower() for desc in cur.description]
             rows = cur.fetchall()
