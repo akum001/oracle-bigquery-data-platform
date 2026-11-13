@@ -12,7 +12,8 @@ from src.warehouse.bigquery_loader import BigQueryWarehouseLoader
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run full Oracle -> Curated -> BigQuery pipeline.")
     parser.add_argument("--config", type=Path, default=Path("config/pipeline_config.yaml"))
-    parser.add_argument("--full-refresh", action="store_true")
+    parser.add_argument("--full-refresh", action="store_true", help="Ignore watermarks and re-extract all source rows")
+    parser.add_argument("--force-load", action="store_true", help="Run Silver, SCD2, and BigQuery load even when 0 rows are extracted")
     args = parser.parse_args()
 
     audit = PipelineAuditLogger()
@@ -21,8 +22,22 @@ def main() -> None:
     try:
         t0 = time.perf_counter()
         print("\n=== [1/4] EXTRACT: Oracle 23ai -> Raw Parquet ===")
-        OracleExtractor(config_path=args.config).run(full_refresh=args.full_refresh)
-        audit.record_stage("extract", time.perf_counter() - t0, "SUCCESS", {"full_refresh": args.full_refresh})
+        extracted_rows = OracleExtractor(config_path=args.config).run(full_refresh=args.full_refresh)
+        audit.record_stage(
+            "extract",
+            time.perf_counter() - t0,
+            "SUCCESS",
+            {"full_refresh": args.full_refresh, "extracted_rows": extracted_rows},
+        )
+
+        if extracted_rows == 0 and not args.force_load and not args.full_refresh:
+            print("\n=== NO NEW SOURCE ROWS: Skipping downstream Transform, SCD2, and BigQuery MERGE (use --force-load to override) ===")
+            audit.record_stage("transform_silver", 0.0, "SKIPPED", {"reason": "no_new_rows"})
+            audit.record_stage("build_scd2", 0.0, "SKIPPED", {"reason": "no_new_rows"})
+            audit.record_stage("load_bigquery", 0.0, "SKIPPED", {"reason": "no_new_rows"})
+            summary = audit.finalize("SUCCEEDED_NOOP")
+            print(f"\n=== PIPELINE SUCCEEDED (NO-OP) (run_id={summary['run_id']}, duration={summary['total_duration_sec']}s) ===")
+            return
 
         t0 = time.perf_counter()
         print("\n=== [2/4] TRANSFORM: Raw Parquet -> Silver Curated ===")

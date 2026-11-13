@@ -118,7 +118,7 @@ class OracleExtractor:
         )
         return len(df)
 
-    def run(self, full_refresh: bool = False) -> None:
+    def run(self, full_refresh: bool = False) -> int:
         print(f"Starting Oracle extraction (full_refresh={full_refresh})...")
         total_rows = 0
         with self._connect() as conn:
@@ -130,6 +130,7 @@ class OracleExtractor:
                     full_refresh=full_refresh,
                 )
         print(f"Extraction finished. Total rows extracted: {total_rows}")
+        return total_rows
 
 
 def main() -> None:
