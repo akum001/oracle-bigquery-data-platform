@@ -1,0 +1,12 @@
+[
+  {"name": "product_id", "type": "INT64", "mode": "REQUIRED"},
+  {"name": "sku", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "product_name", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "category", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "unit_price", "type": "FLOAT64", "mode": "NULLABLE"},
+  {"name": "unit_cost", "type": "FLOAT64", "mode": "NULLABLE"},
+  {"name": "is_active", "type": "INT64", "mode": "NULLABLE"},
+  {"name": "created_at", "type": "TIMESTAMP", "mode": "NULLABLE"},
+  {"name": "updated_at", "type": "TIMESTAMP", "mode": "NULLABLE"},
+  {"name": "_curated_at_utc", "type": "STRING", "mode": "NULLABLE"}
+]

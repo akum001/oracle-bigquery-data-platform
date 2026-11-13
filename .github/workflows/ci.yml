@@ -24,3 +24,19 @@ jobs:
 
       - name: Run unit & contract tests
         run: pytest -v
+
+  terraform-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive terraform/
+      - name: Terraform Init & Validate
+        working-directory: terraform
+        run: |
+          terraform init -backend=false
+          terraform validate
