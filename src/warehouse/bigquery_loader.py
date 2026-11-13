@@ -128,12 +128,20 @@ class BigQueryWarehouseLoader:
         )
 
     def _load_live(self, client: bigquery.Client, target_table: str, df: pd.DataFrame, pk: str) -> None:
+        target_table_id = f"{self.project_id}.{self.dataset}.{target_table}"
+        target_schema = client.get_table(target_table_id).schema
+        target_cols = [field.name for field in target_schema]
+
+        df_utc = df[[c for c in target_cols if c in df.columns]].copy()
+        for col in df_utc.select_dtypes(include=["datetime64[ns]", "datetime64[us]"]).columns:
+            df_utc[col] = pd.to_datetime(df_utc[col]).dt.tz_localize("UTC")
+
         stage_table_id = f"{self.project_id}.{self.dataset}._stg_{target_table}"
         job_config = bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")
-        load_job = client.load_table_from_dataframe(df, stage_table_id, job_config=job_config)
+        load_job = client.load_table_from_dataframe(df_utc, stage_table_id, job_config=job_config)
         load_job.result()
 
-        merge_sql = self._build_merge_sql(target_table, pk, list(df.columns))
+        merge_sql = self._build_merge_sql(target_table, pk, list(df_utc.columns))
         client.query(merge_sql).result()
         client.delete_table(stage_table_id, not_found_ok=True)
 
