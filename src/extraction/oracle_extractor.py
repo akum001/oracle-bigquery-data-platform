@@ -1,5 +1,4 @@
 import argparse
-import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,18 +9,17 @@ import pandas as pd
 import yaml
 from dotenv import load_dotenv
 
+from src.common.storage import StorageIO, join_uri, resolve_data_path
+
 
 class WatermarkStore:
-    def __init__(self, state_file: Path) -> None:
-        self.state_file = state_file
-        self.state_file.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, state_file: str | Path) -> None:
+        self.state_file = str(state_file)
+        self.storage = StorageIO(self.state_file)
         self._state: Dict[str, str] = self._load()
 
     def _load(self) -> Dict[str, str]:
-        if not self.state_file.exists():
-            return {}
-        with self.state_file.open("r", encoding="utf-8") as f:
-            return json.load(f)
+        return self.storage.read_json(self.state_file, default={})
 
     def get(self, table_name: str) -> Optional[datetime]:
         raw_val = self._state.get(table_name)
@@ -31,10 +29,7 @@ class WatermarkStore:
 
     def set(self, table_name: str, watermark_dt: datetime) -> None:
         self._state[table_name] = watermark_dt.isoformat()
-        tmp_file = self.state_file.with_suffix(".tmp")
-        with tmp_file.open("w", encoding="utf-8") as f:
-            json.dump(self._state, f, indent=2, sort_keys=True)
-        tmp_file.replace(self.state_file)
+        self.storage.write_json_atomic(self.state_file, self._state)
 
 
 class OracleExtractor:
@@ -50,9 +45,10 @@ class OracleExtractor:
         self.user = os.getenv("ORACLE_USER")
         self.password = os.getenv("ORACLE_APP_PWD")
 
-        self.raw_dir = Path(self.cfg["paths"]["raw_landing_dir"])
-        state_dir = Path(self.cfg["paths"]["state_dir"])
-        self.watermarks = WatermarkStore(state_dir / "watermarks.json")
+        self.raw_dir = resolve_data_path(self.cfg["paths"]["raw_landing_dir"])
+        self.raw_storage = StorageIO(self.raw_dir)
+        state_dir = resolve_data_path(self.cfg["paths"]["state_dir"])
+        self.watermarks = WatermarkStore(join_uri(state_dir, "watermarks.json"))
         self.source_system = self.cfg["source"]["system_name"]
         self.batch_size = int(self.cfg["source"].get("batch_size", 1000))
 
@@ -104,10 +100,9 @@ class OracleExtractor:
         df["_source_system"] = self.source_system
         df["_extract_mode"] = effective_mode
 
-        partition_dir = self.raw_dir / table_name / f"extract_date={run_ts.strftime('%Y-%m-%d')}"
-        partition_dir.mkdir(parents=True, exist_ok=True)
-        out_file = partition_dir / f"{table_name}_{run_ts.strftime('%Y%m%dT%H%M%SZ')}.parquet"
-        df.to_parquet(out_file, index=False, engine="pyarrow")
+        partition_dir = join_uri(self.raw_dir, table_name, f"extract_date={run_ts.strftime('%Y-%m-%d')}")
+        out_file = join_uri(partition_dir, f"{table_name}_{run_ts.strftime('%Y%m%dT%H%M%SZ')}.parquet")
+        self.raw_storage.write_parquet(df, out_file)
 
         max_wm = pd.to_datetime(df[watermark_col]).max().to_pydatetime()
         self.watermarks.set(table_name, max_wm)

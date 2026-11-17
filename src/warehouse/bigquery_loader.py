@@ -9,6 +9,8 @@ import yaml
 from dotenv import load_dotenv
 from google.cloud import bigquery
 
+from src.common.storage import StorageIO, join_uri, resolve_data_path
+
 
 EXPECTED_SCHEMAS: Dict[str, Dict[str, str]] = {
     "dim_customers_scd2": {
@@ -84,9 +86,9 @@ class BigQueryWarehouseLoader:
         self.location = os.getenv("BQ_LOCATION", "US")
         self.load_mode = os.getenv("BQ_LOAD_MODE", "dry_run").lower()
 
-        self.curated_dir = Path(self.cfg["paths"]["curated_dir"])
-        self.state_dir = Path(self.cfg["paths"]["state_dir"])
-        self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.curated_dir = resolve_data_path(self.cfg["paths"]["curated_dir"])
+        self.state_dir = resolve_data_path(self.cfg["paths"]["state_dir"])
+        self.storage = StorageIO(self.curated_dir)
 
     def _validate_contract(
         self, target_table: str, df: pd.DataFrame, pk: str, partition_field: str
@@ -161,11 +163,11 @@ class BigQueryWarehouseLoader:
         }
 
         for target_table, t_cfg in self.cfg["warehouse"]["tables"].items():
-            parquet_path = self.curated_dir / t_cfg["source_file"]
+            parquet_path = join_uri(self.curated_dir, t_cfg["source_file"])
             pk = t_cfg["primary_key"]
             partition_field = t_cfg["partition_field"]
 
-            df = pd.read_parquet(parquet_path)
+            df = self.storage.read_parquet(parquet_path)
             self._validate_contract(target_table, df, pk, partition_field)
             merge_sql = self._build_merge_sql(target_table, pk, list(df.columns))
 
@@ -188,9 +190,8 @@ class BigQueryWarehouseLoader:
                 f"rows={len(df):<3} | partition={partition_field} | cluster={t_cfg['cluster_fields']}"
             )
 
-        manifest_path = self.state_dir / "bq_load_manifest.json"
-        with manifest_path.open("w", encoding="utf-8") as f:
-            json.dump(manifest, f, indent=2)
+        manifest_path = join_uri(self.state_dir, "bq_load_manifest.json")
+        self.storage.write_json_atomic(manifest_path, manifest)
         print(f"Warehouse load complete. Manifest saved -> {manifest_path}")
 
 

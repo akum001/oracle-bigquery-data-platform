@@ -7,3 +7,4 @@ google-cloud-bigquery>=3.25.0
 pytest>=8.3.0
 duckdb>=1.1.0
 pandas-gbq>=0.26.1
+gcsfs>=2024.9.0

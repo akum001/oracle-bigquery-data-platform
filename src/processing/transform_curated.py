@@ -5,23 +5,24 @@ from typing import Any, Dict, Tuple
 import pandas as pd
 import yaml
 
+from src.common.storage import StorageIO, join_uri, resolve_data_path
+
 
 class CuratedProcessor:
     def __init__(self, config_path: Path) -> None:
         with config_path.open("r", encoding="utf-8") as f:
             self.cfg: Dict[str, Any] = yaml.safe_load(f)
 
-        self.raw_dir = Path(self.cfg["paths"]["raw_landing_dir"])
-        self.curated_dir = Path(self.cfg["paths"]["curated_dir"])
-        self.quarantine_dir = Path(self.cfg["paths"]["quarantine_dir"])
-        self.curated_dir.mkdir(parents=True, exist_ok=True)
-        self.quarantine_dir.mkdir(parents=True, exist_ok=True)
+        self.raw_dir = resolve_data_path(self.cfg["paths"]["raw_landing_dir"])
+        self.curated_dir = resolve_data_path(self.cfg["paths"]["curated_dir"])
+        self.quarantine_dir = resolve_data_path(self.cfg["paths"]["quarantine_dir"])
+        self.storage = StorageIO(self.raw_dir)
 
     def _load_raw_table(self, table_name: str) -> pd.DataFrame:
-        files = sorted((self.raw_dir / table_name).rglob("*.parquet"))
+        files = self.storage.list_parquet_files(join_uri(self.raw_dir, table_name))
         if not files:
             raise FileNotFoundError(f"No raw parquet files found for table: {table_name}")
-        frames = [pd.read_parquet(f) for f in files]
+        frames = [self.storage.read_parquet(f) for f in files]
         return pd.concat(frames, ignore_index=True)
 
     def _deduplicate(self, df: pd.DataFrame, pk: str, watermark_col: str) -> pd.DataFrame:
@@ -52,8 +53,8 @@ class CuratedProcessor:
 
         if not quarantine_df.empty:
             ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            q_path = self.quarantine_dir / f"{table_name}_quarantine_{ts}.parquet"
-            quarantine_df.to_parquet(q_path, index=False)
+            q_path = join_uri(self.quarantine_dir, f"{table_name}_quarantine_{ts}.parquet")
+            self.storage.write_parquet(quarantine_df, q_path)
 
         return valid_df, quarantine_df
 
@@ -92,15 +93,14 @@ class CuratedProcessor:
             clean_df = self._standardize(table_name, dedup_df)
 
             curated_tables[table_name] = clean_df
-            out_path = self.curated_dir / f"{table_name}.parquet"
-            clean_df.to_parquet(out_path, index=False)
+            out_path = join_uri(self.curated_dir, f"{table_name}.parquet")
+            self.storage.write_parquet(clean_df, out_path)
 
             print(
                 f"  [OK] {table_name:<15} | raw_rows={len(raw_df):<3} | "
                 f"quarantined={len(q_df):<2} | curated_rows={len(clean_df):<3} -> {out_path}"
             )
 
-        # Build denormalized BigQuery-ready analytics mart: fact_order_lines
         items = curated_tables["order_items"]
         orders = curated_tables["orders"][
             ["order_id", "order_number", "customer_id", "order_status", "currency_code", "order_date"]
@@ -120,8 +120,8 @@ class CuratedProcessor:
         fact_lines["line_cost"] = (fact_lines["quantity"] * fact_lines["unit_cost"]).round(2)
         fact_lines["gross_margin"] = (fact_lines["net_amount"] - fact_lines["line_cost"]).round(2)
 
-        mart_path = self.curated_dir / "fact_order_lines.parquet"
-        fact_lines.to_parquet(mart_path, index=False)
+        mart_path = join_uri(self.curated_dir, "fact_order_lines.parquet")
+        self.storage.write_parquet(fact_lines, mart_path)
         print(f"  [OK] {'fact_order_lines':<15} | mart_rows={len(fact_lines):<3} -> {mart_path}")
 
 

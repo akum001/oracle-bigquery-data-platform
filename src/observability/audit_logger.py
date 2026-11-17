@@ -5,11 +5,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
+from src.common.storage import StorageIO, resolve_data_path
+
 
 class PipelineAuditLogger:
-    def __init__(self, log_path: Path = Path("data/state/pipeline_audit_log.jsonl")) -> None:
-        self.log_path = log_path
-        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, log_path: str | Path | None = None) -> None:
+        resolved = str(log_path) if log_path is not None else resolve_data_path("data/state/pipeline_audit_log.jsonl")
+        self.log_path = resolved
+        self.storage = StorageIO(resolved)
         self.run_id = str(uuid.uuid4())[:12]
         self.started_at = datetime.now(timezone.utc)
         self._t0 = time.perf_counter()
@@ -33,6 +36,5 @@ class PipelineAuditLogger:
             "error": error_message,
             "stages": self.stages,
         }
-        with self.log_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(event) + "\n")
+        self.storage.append_jsonl(self.log_path, event)
         return event
