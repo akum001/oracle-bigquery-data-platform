@@ -14,23 +14,29 @@ def main() -> None:
     parser.add_argument("--config", type=Path, default=Path("config/pipeline_config.yaml"))
     parser.add_argument("--full-refresh", action="store_true", help="Ignore watermarks and re-extract all source rows")
     parser.add_argument("--force-load", action="store_true", help="Run Silver, SCD2, and BigQuery load even when 0 rows are extracted")
+    parser.add_argument("--skip-extract", action="store_true", help="Skip Oracle extraction and process existing raw Parquet files in DATA_ROOT")
     args = parser.parse_args()
 
     audit = PipelineAuditLogger()
     print(f"=== PIPELINE RUN START (run_id={audit.run_id}) ===")
 
     try:
-        t0 = time.perf_counter()
-        print("\n=== [1/4] EXTRACT: Oracle 23ai -> Raw Parquet ===")
-        extracted_rows = OracleExtractor(config_path=args.config).run(full_refresh=args.full_refresh)
-        audit.record_stage(
-            "extract",
-            time.perf_counter() - t0,
-            "SUCCESS",
-            {"full_refresh": args.full_refresh, "extracted_rows": extracted_rows},
-        )
+        if args.skip_extract:
+            print("\n=== [1/4] EXTRACT: Skipped (--skip-extract) — reading existing Bronze Parquet ===")
+            extracted_rows = 0
+            audit.record_stage("extract", 0.0, "SKIPPED", {"reason": "skip_extract_flag"})
+        else:
+            t0 = time.perf_counter()
+            print("\n=== [1/4] EXTRACT: Oracle 23ai -> Raw Parquet ===")
+            extracted_rows = OracleExtractor(config_path=args.config).run(full_refresh=args.full_refresh)
+            audit.record_stage(
+                "extract",
+                time.perf_counter() - t0,
+                "SUCCESS",
+                {"full_refresh": args.full_refresh, "extracted_rows": extracted_rows},
+            )
 
-        if extracted_rows == 0 and not args.force_load and not args.full_refresh:
+        if extracted_rows == 0 and not args.force_load and not args.full_refresh and not args.skip_extract:
             print("\n=== NO NEW SOURCE ROWS: Skipping downstream Transform, SCD2, and BigQuery MERGE (use --force-load to override) ===")
             audit.record_stage("transform_silver", 0.0, "SKIPPED", {"reason": "no_new_rows"})
             audit.record_stage("build_scd2", 0.0, "SKIPPED", {"reason": "no_new_rows"})
